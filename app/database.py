@@ -7,9 +7,15 @@ client: AsyncIOMotorClient = None
 db = None
 
 
+import certifi
+
 async def connect_db():
     global client, db
-    client = AsyncIOMotorClient(settings.mongo_uri)
+    
+    # Use certifi to trust MongoDB Atlas TLS certificates on Render
+    ca = certifi.where()
+    
+    client = AsyncIOMotorClient(settings.mongo_uri, tlsCAFile=ca)
     db = client[settings.mongo_db_name]
     # Create indexes
     await db.test_results.create_index("test_id")
