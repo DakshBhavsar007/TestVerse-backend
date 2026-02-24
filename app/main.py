@@ -143,7 +143,7 @@ app = FastAPI(
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.environment != "production" else ["https://yourdomain.com"],
+    allow_origins=["*"] if settings.environment != "production" else ["https://yourdomain.com", "https://testverse-frontend.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
