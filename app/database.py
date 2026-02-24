@@ -8,14 +8,15 @@ db = None
 
 
 import certifi
+import ssl
 
 async def connect_db():
     global client, db
     
-    # Use certifi to trust MongoDB Atlas TLS certificates on Render
-    ca = certifi.where()
+    # Create an SSL context using certifi to reliably verify Atlas certificates
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
     
-    client = AsyncIOMotorClient(settings.mongo_uri, tlsCAFile=ca)
+    client = AsyncIOMotorClient(settings.mongo_uri, tls=True, tlsCAFile=certifi.where())
     db = client[settings.mongo_db_name]
     # Create indexes
     await db.test_results.create_index("test_id")
