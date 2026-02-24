@@ -29,3 +29,6 @@ passlib[bcrypt]
 apscheduler
 # Phase 8A — AI Intelligence
 google-genai>=1.0.0
+sendgrid
+groq
+reportlab
