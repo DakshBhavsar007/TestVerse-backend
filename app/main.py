@@ -189,7 +189,7 @@ async def root():
     return {"service": "TestVerse API", "version": "3.1.0", "status": "running", "docs": "/docs"}
 
 
-@app.get("/health", tags=["Health"])
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["Health"])
 async def health():
     from .database import get_db
     from .services.scheduler import scheduler
