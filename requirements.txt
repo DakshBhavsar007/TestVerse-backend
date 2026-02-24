@@ -13,6 +13,7 @@ cryptography
 Pillow
 jinja2
 pydantic
+pydantic[email]
 pydantic-settings
 python-multipart
 aiofiles
