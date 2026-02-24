@@ -1,0 +1,31 @@
+fastapi
+uvicorn[standard]
+playwright
+motor
+pymongo
+python-dotenv
+httpx
+aiohttp
+beautifulsoup4
+lxml
+certifi
+cryptography
+Pillow
+jinja2
+pydantic
+pydantic-settings
+python-multipart
+aiofiles
+pyOpenSSL
+dnspython
+validators
+trio>=0.33.0
+httpcore>=1.0.9
+httpx>=0.28.1
+# Authentication & Security
+python-jose[cryptography]
+passlib[bcrypt]
+# Scheduling
+apscheduler
+# Phase 8A — AI Intelligence
+google-genai>=1.0.0

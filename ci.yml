@@ -1,0 +1,82 @@
+name: TestVerse CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Backend tests ────────────────────────────────────────────────────────────
+  backend-tests:
+    name: Backend — pytest
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r tests/requirements-test.txt
+
+      - name: Run pytest
+        env:
+          DEBUG: "true"
+          CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.CREDENTIAL_ENCRYPTION_KEY }}
+        run: pytest tests/ -v --tb=short
+
+  # ── Frontend lint + build ─────────────────────────────────────────────────
+  frontend-build:
+    name: Frontend — build check
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend   # adjust if your React app is elsewhere
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+  # ── Security scan ─────────────────────────────────────────────────────────
+  security-scan:
+    name: Security — pip-audit
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Audit dependencies
+        run: pip-audit -r requirements.txt

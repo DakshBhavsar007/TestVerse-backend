@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "C:\Users\parul\Desktop\TESTVERSE\backend\app\routers\test_router.py", line 187, in _run_login_checks
+    login_success, login_message, js_errors, post_login = await run_login_test(
+                                                                ~~~~~~~~~~~~~~^
+        url=url,
+        ^^^^^^^^
+    ...<7 lines>...
+        progress_cb=progress_cb,
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+TypeError: run_login_test() got an unexpected keyword argument 'progress_cb'
