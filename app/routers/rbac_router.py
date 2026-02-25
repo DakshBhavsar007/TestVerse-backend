@@ -139,6 +139,12 @@ async def get_user_role(user_id: str, team_id: Optional[str] = None) -> UserRole
     if db is None:
         return UserRole.ADMIN  # Default in dev mode
     
+    # Backward compatibility for old JWT tokens that only had email in the `sub` field.
+    if "@" in user_id:
+        user_doc = await db.users.find_one({"email": user_id.lower()})
+        if user_doc:
+            user_id = str(user_doc["_id"])
+    
     # Check team-specific role first
     if team_id:
         member = await db.team_members.find_one({

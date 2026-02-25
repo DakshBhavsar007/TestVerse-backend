@@ -34,12 +34,14 @@ async def _log_activity(
     entity_type: str,
     entity_id: str,
     detail: str = "",
+    user_name: str = "Unknown",
 ):
     """Insert one activity log entry."""
     await db.activity_feed.insert_one({
         "activity_id": str(uuid.uuid4()),
         "user_id": user_id,
         "user_email": user_email,
+        "user_name": user_name,
         "action": action,           # e.g. "comment_added", "approval_requested"
         "entity_type": entity_type, # "test_result" | "comment"
         "entity_id": entity_id,
@@ -79,8 +81,9 @@ async def add_comment(
     comment = {
         "comment_id": str(uuid.uuid4()),
         "test_id": test_id,
-        "user_id": current_user["sub"],
-        "user_email": current_user.get("email", "unknown"),
+        "user_id": current_user.get("id") or current_user.get("sub"),
+        "user_email": current_user.get("sub", "unknown"),
+        "user_name": current_user.get("name", "Unknown"),
         "text": body.text.strip(),
         "annotation_key": body.annotation_key,
         "created_at": now_iso(),
@@ -92,8 +95,9 @@ async def add_comment(
 
     await _log_activity(
         db,
-        user_id=current_user["sub"],
-        user_email=current_user.get("email", "unknown"),
+        user_id=current_user.get("id") or current_user.get("sub"),
+        user_email=current_user.get("sub", "unknown"),
+        user_name=current_user.get("name", "Unknown"),
         action="comment_added",
         entity_type="test_result",
         entity_id=test_id,
@@ -134,7 +138,9 @@ async def edit_comment(
     comment = await db.comments.find_one({"comment_id": comment_id, "deleted": False})
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
-    if comment["user_id"] != current_user["sub"]:
+    
+    current_uid = current_user.get("id") or current_user.get("sub")
+    if comment["user_id"] != current_uid and comment["user_id"] != current_user.get("sub"):
         raise HTTPException(status_code=403, detail="You can only edit your own comments")
 
     await db.comments.update_one(
@@ -157,7 +163,9 @@ async def delete_comment(
     comment = await db.comments.find_one({"comment_id": comment_id, "deleted": False})
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
-    if comment["user_id"] != current_user["sub"]:
+        
+    current_uid = current_user.get("id") or current_user.get("sub")
+    if comment["user_id"] != current_uid and comment["user_id"] != current_user.get("sub"):
         raise HTTPException(status_code=403, detail="You can only delete your own comments")
 
     await db.comments.update_one(
@@ -166,8 +174,9 @@ async def delete_comment(
     )
     await _log_activity(
         db,
-        user_id=current_user["sub"],
-        user_email=current_user.get("email", "unknown"),
+        user_id=current_uid,
+        user_email=current_user.get("sub", "unknown"),
+        user_name=current_user.get("name", "Unknown"),
         action="comment_deleted",
         entity_type="comment",
         entity_id=comment_id,
@@ -214,8 +223,8 @@ async def request_approval(
     approval = {
         "approval_id": str(uuid.uuid4()),
         "test_id": test_id,
-        "requested_by": current_user["sub"],
-        "requested_by_email": current_user.get("email", "unknown"),
+        "requested_by": current_user.get("id") or current_user.get("sub"),
+        "requested_by_email": current_user.get("sub", "unknown"),
         "reviewers": body.reviewers,
         "note": body.note or "",
         "status": "pending",        # pending | approved | rejected | superseded
@@ -228,8 +237,9 @@ async def request_approval(
 
     await _log_activity(
         db,
-        user_id=current_user["sub"],
-        user_email=current_user.get("email", "unknown"),
+        user_id=current_user.get("id") or current_user.get("sub"),
+        user_email=current_user.get("sub", "unknown"),
+        user_name=current_user.get("name", "Unknown"),
         action="approval_requested",
         entity_type="test_result",
         entity_id=test_id,
@@ -282,12 +292,13 @@ async def decide_approval(
     if approval["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Approval is already {approval['status']}")
 
-    reviewer_email = current_user.get("email", "")
-    if reviewer_email not in approval["reviewers"] and current_user["sub"] != approval["requested_by"]:
+    reviewer_email = current_user.get("sub", "")
+    current_uid = current_user.get("id") or reviewer_email
+    if reviewer_email not in approval["reviewers"] and current_uid != approval["requested_by"]:
         raise HTTPException(status_code=403, detail="You are not a reviewer for this approval")
 
     decision_entry = {
-        "reviewer": current_user["sub"],
+        "reviewer": current_uid,
         "reviewer_email": reviewer_email,
         "decision": body.decision,
         "note": body.note or "",
@@ -315,8 +326,9 @@ async def decide_approval(
 
     await _log_activity(
         db,
-        user_id=current_user["sub"],
+        user_id=current_uid,
         user_email=reviewer_email,
+        user_name=current_user.get("name", "Unknown"),
         action=f"approval_{body.decision}",
         entity_type="test_result",
         entity_id=approval["test_id"],

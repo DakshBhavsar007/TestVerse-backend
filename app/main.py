@@ -42,6 +42,8 @@ from .routers.collaboration_router import router as collaboration_router
 from .routers.cicd_router import router as cicd_router
 # Phase 8E routers
 from .routers.openapi_router import router as openapi_router
+from .routers.chat_router import router as chat_router
+from .routers.admin_router import router as admin_router
 
 from .config import get_settings
 from .middleware.rate_limit import RateLimitMiddleware
@@ -104,6 +106,41 @@ async def lifespan(app: FastAPI):
             await db.jira_configs.create_index("user_id", unique=True)
             await db.imported_tests.create_index("import_id", unique=True)
             await db.imported_tests.create_index([("user_id", 1), ("imported_at", -1)])
+            
+            # Initialize Default Admin
+            from .utils.auth import hash_password
+            from datetime import datetime, timezone
+            admin_email = "admin@testverse.com"
+            admin_user = await db.users.find_one({"email": admin_email})
+            if not admin_user:
+                new_admin = {
+                    "email": admin_email,
+                    "name": "TestVerse Admin",
+                    "hashed_password": hash_password("TESTVERSE@007"),
+                    "created_at": datetime.now(timezone.utc),
+                    "is_active": True,
+                }
+                res = await db.users.insert_one(new_admin)
+                admin_id = str(res.inserted_id)
+                await db.role_assignments.replace_one(
+                    {"user_id": admin_id},
+                    {"user_id": admin_id, "role": "admin"},
+                    upsert=True
+                )
+                print("🌟 Default Admin created.")
+            else:
+                # Ensure password and role are correct in case it got changed
+                admin_id = str(admin_user.get("_id") or admin_user.get("id"))
+                await db.users.update_one(
+                    {"email": admin_email},
+                    {"$set": {"hashed_password": hash_password("TESTVERSE@007"), "name": "TestVerse Admin"}}
+                )
+                await db.role_assignments.replace_one(
+                    {"user_id": admin_id},
+                    {"user_id": admin_id, "role": "admin"},
+                    upsert=True
+                )
+                print("🌟 Default Admin ensured.")
     except Exception as e:
         print(f"⚠️  MongoDB not available — using in-memory store: {e}")
 
@@ -200,6 +237,8 @@ app.include_router(collaboration_router)
 app.include_router(cicd_router)
 # Phase 8E
 app.include_router(openapi_router)
+app.include_router(chat_router)
+app.include_router(admin_router)
 
 os.makedirs(settings.reports_dir, exist_ok=True)
 app.mount("/reports", StaticFiles(directory=settings.reports_dir), name="reports")

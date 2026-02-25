@@ -29,6 +29,9 @@ class InviteMemberRequest(BaseModel):
 class UpdateRoleRequest(BaseModel):
     role: str              # "admin" | "viewer"
 
+class UpdateTeamSettings(BaseModel):
+    admins_only_chat: bool
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _now() -> str:
@@ -66,17 +69,12 @@ async def create_team(
     db = get_db()
     user_id = current_user["sub"]
 
-    # One team per user for now (can be relaxed)
-    existing = await db.teams.find_one({"owner_id": user_id}, {"_id": 0})
-    if existing:
-        raise HTTPException(status_code=400, detail="You already own a team. Delete it first.")
-
     team_id = str(uuid.uuid4())
     team = {
         "team_id": team_id,
         "name": body.name.strip(),
         "owner_id": user_id,
-        "owner_email": current_user.get("email", ""),
+        "owner_email": current_user.get("email") or current_user.get("sub", ""),
         "created_at": _now(),
     }
     await db.teams.insert_one(team)
@@ -85,7 +83,7 @@ async def create_team(
     await db.team_members.insert_one({
         "team_id": team_id,
         "user_id": user_id,
-        "email": current_user.get("email", ""),
+        "email": current_user.get("email") or current_user.get("sub", ""),
         "role": "owner",
         "invited_at": _now(),
         "accepted": True,
@@ -96,34 +94,36 @@ async def create_team(
 
 
 @router.get("/mine")
-async def get_my_team(current_user: dict = Depends(get_current_user)):
-    """Get the team the user owns OR is a member of."""
+async def get_my_teams(current_user: dict = Depends(get_current_user)):
+    """Get all teams the user owns OR is a member of."""
     db = get_db()
+    user_email = current_user.get("email") or current_user.get("sub", "")
     user_id = current_user["sub"]
 
-    # Check if owner
-    team = await db.teams.find_one({"owner_id": user_id}, {"_id": 0})
+    # Get all memberships
+    mem_cursor = db.team_members.find({"email": user_email, "accepted": True}, {"_id": 0})
+    memberships = await mem_cursor.to_list(length=100)
+    team_ids = [m["team_id"] for m in memberships]
 
-    if not team:
-        # Check membership
-        membership = await db.team_members.find_one(
-            {"user_id": user_id, "accepted": True}, {"_id": 0}
-        )
-        if membership:
-            team = await db.teams.find_one(
-                {"team_id": membership["team_id"]}, {"_id": 0}
-            )
+    # Also get teams where user is owner_id, just in case
+    owned_cursor = db.teams.find({"owner_id": user_id}, {"_id": 0})
+    owned_teams = await owned_cursor.to_list(length=100)
+    for t in owned_teams:
+        if t["team_id"] not in team_ids:
+            team_ids.append(t["team_id"])
 
-    if not team:
-        return {"team": None, "members": []}
+    # Fetch all teams
+    teams_cursor = db.teams.find({"team_id": {"$in": team_ids}}, {"_id": 0})
+    teams = await teams_cursor.to_list(length=100)
 
-    # Load members
-    members_cursor = db.team_members.find(
-        {"team_id": team["team_id"]}, {"_id": 0}
-    )
-    members = await members_cursor.to_list(length=100)
+    # Fetch members for each team
+    result = []
+    for t in teams:
+        members_cursor = db.team_members.find({"team_id": t["team_id"]}, {"_id": 0})
+        members = await members_cursor.to_list(length=100)
+        result.append({"team": t, "members": members})
 
-    return {"team": team, "members": members}
+    return {"teams": result}
 
 
 @router.post("/{team_id}/invite")
@@ -148,8 +148,8 @@ async def invite_member(
         raise HTTPException(status_code=400, detail="This email is already a team member")
 
     # Try to find user_id from users collection
-    invited_user = await db.users.find_one({"email": body.email}, {"_id": 0, "user_id": 1})
-    invited_user_id = invited_user["user_id"] if invited_user else None
+    invited_user = await db.users.find_one({"email": body.email}, {"_id": 1})
+    invited_user_id = str(invited_user["_id"]) if invited_user else None
 
     member = {
         "team_id": team_id,
@@ -225,3 +225,24 @@ async def delete_team(
     await db.team_members.delete_many({"team_id": team_id})
 
     return {"success": True, "message": "Team deleted"}
+
+
+@router.patch("/{team_id}/settings")
+async def update_team_settings(
+    team_id: str,
+    body: UpdateTeamSettings,
+    current_user: dict = Depends(get_current_user),
+):
+    """Owner can toggle admins_only_chat."""
+    db = get_db()
+    team = await _get_team_or_404(team_id)
+
+    if team["owner_id"] != current_user["sub"]:
+        raise HTTPException(status_code=403, detail="Only the owner can update team settings")
+
+    await db.teams.update_one(
+        {"team_id": team_id},
+        {"$set": {"admins_only_chat": body.admins_only_chat}}
+    )
+
+    return {"success": True, "admins_only_chat": body.admins_only_chat}

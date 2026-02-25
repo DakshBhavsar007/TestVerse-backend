@@ -72,7 +72,8 @@ async def register(req: RegisterRequest):
             upsert=True
         )
 
-    token = create_access_token({"sub": user["email"], "name": user["name"]})
+    user_id_str = str(user.get("id", ""))
+    token = create_access_token({"sub": user["email"], "name": user.get("name", ""), "id": user_id_str})
     return TokenResponse(access_token=token, user=_safe(user))
 
 
@@ -85,13 +86,27 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    token = create_access_token({"sub": user["email"], "name": user.get("name", "")})
+    user_id_str = str(user.get("_id") or user.get("id", ""))
+    token = create_access_token({"sub": user["email"], "name": user.get("name", ""), "id": user_id_str})
     return TokenResponse(access_token=token, user=_safe(user))
 
 
 @router.get("/me")
 async def me(current_user: dict = Depends(get_current_user)):
-    return {"user": current_user}
+    db = get_db()
+    if db is not None:
+        email = current_user.get("email") or current_user.get("sub", "")
+        if email:
+            user = await db.users.find_one({"email": email.lower()})
+            if user:
+                return {"user": _safe(user)}
+    
+    # Fallback if DB not available or user not found
+    return {"user": {
+        "id": current_user.get("id") or current_user.get("sub"),
+        "email": current_user.get("email") or current_user.get("sub"),
+        "name": current_user.get("name", ""),
+    }}
 
 
 # ─── Profile Update Endpoints ──────────────────────────────────────────────────
