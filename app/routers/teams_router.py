@@ -261,6 +261,26 @@ async def delete_team(
     return {"success": True, "message": "Team deleted"}
 
 
+@router.post("/{team_id}/leave")
+async def leave_team(
+    team_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Leave a team. Owner cannot leave."""
+    db = get_db()
+    team = await _get_team_or_404(team_id)
+    user_email = current_user.get("email") or current_user.get("sub", "")
+    
+    if team["owner_email"] == user_email:
+        raise HTTPException(status_code=400, detail="Owner cannot leave the team. Delete the team instead.")
+        
+    result = await db.team_members.delete_one({"team_id": team_id, "email": user_email})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="You are not a member of this team")
+        
+    return {"success": True, "message": "Left team successfully"}
+
+
 @router.patch("/{team_id}/settings")
 async def update_team_settings(
     team_id: str,
