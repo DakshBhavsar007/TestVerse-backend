@@ -331,7 +331,7 @@ def _calc_overall_score(result: dict) -> int:
 
 
 # ── Main runner ────────────────────────────────────────────────────────────────
-async def _run_all(tid, url, username, enc_pw, user_id=None):
+async def _run_all(tid, url, username=None, enc_pw=None, user_id=None, skip_notifications=False):
     result = {
         "test_id": tid, "url": url, "user_id": user_id,
         "status": "running",
@@ -431,7 +431,7 @@ async def _run_all(tid, url, username, enc_pw, user_id=None):
             "summary": result.get("summary"),
         })
         # ── Send email notifications ───────────────────────────────────────────
-        if user_id:
+        if user_id and not skip_notifications:
             asyncio.create_task(notify_on_complete(
                 user_id=user_id,
                 url=url,

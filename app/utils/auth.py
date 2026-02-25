@@ -72,8 +72,21 @@ async def get_current_user(
 
     if token:
         try:
-            return verify_token(token)
-        except HTTPException:
+            payload = verify_token(token)
+            db = get_db()
+            if db is not None:
+                user = await db.users.find_one({"email": payload.get("sub", "").lower()})
+                if user and not user.get("is_active", True):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Account is deactivated. Contact Support.",
+                    )
+            return payload
+        except HTTPException as e:
+            if getattr(e, "status_code", None) == 403:
+                raise e
+            pass
+        except Exception:
             pass
 
     raise HTTPException(

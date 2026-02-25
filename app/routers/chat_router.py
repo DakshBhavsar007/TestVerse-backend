@@ -1,8 +1,9 @@
 import uuid
 import json
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from ..database import get_db
+from ..utils.auth import get_current_user
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -41,6 +42,25 @@ async def get_messages(team_id: str):
     cursor = db.chat_messages.find({"team_id": team_id}, {"_id": 0}).sort("timestamp", 1)
     messages = await cursor.to_list(length=300)
     return {"messages": messages}
+
+@router.delete("/{team_id}/messages/{msg_id}")
+async def delete_message(team_id: str, msg_id: str, current_user: dict = Depends(get_current_user)):
+    db = get_db()
+    team = await db.teams.find_one({"team_id": team_id}, {"_id": 0})
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+        
+    user_email = current_user.get("email") or current_user.get("sub", "")
+    user_id = current_user.get("sub", "")
+    if team.get("owner_email") != user_email and team.get("owner_id") != user_id:
+        raise HTTPException(status_code=403, detail="Only owner can delete messages")
+        
+    res = await db.chat_messages.delete_one({"msg_id": msg_id, "team_id": team_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Message not found")
+        
+    await manager.broadcast(team_id, {"deleted_msg_id": msg_id})
+    return {"success": True}
 
 @router.websocket("/{team_id}/ws/{user_email}")
 async def websocket_endpoint(websocket: WebSocket, team_id: str, user_email: str):

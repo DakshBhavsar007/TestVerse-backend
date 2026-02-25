@@ -86,6 +86,11 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if not user.get("is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is deactivated. Contact Support.",
+        )
     user_id_str = str(user.get("_id") or user.get("id", ""))
     token = create_access_token({"sub": user["email"], "name": user.get("name", ""), "id": user_id_str})
     return TokenResponse(access_token=token, user=_safe(user))

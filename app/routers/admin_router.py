@@ -46,6 +46,7 @@ async def get_all_users(admin=Depends(require_system_admin)):
         role_doc = await db.role_assignments.find_one({"user_id": uid})
         u["id"] = uid
         u["role"] = role_doc["role"] if role_doc else "developer"
+        u["is_active"] = u.get("is_active", True)
         u["created_at"] = str(u.get("created_at", ""))
         u.pop("_id", None)
         result.append(u)
@@ -54,13 +55,25 @@ async def get_all_users(admin=Depends(require_system_admin)):
 class UserUpdateRequest(BaseModel):
     name: Optional[str] = None
     role: Optional[str] = None
+    is_active: Optional[bool] = None
 
 @router.patch("/users/{user_id}")
 async def update_user(user_id: str, req: UserUpdateRequest, admin=Depends(require_system_admin)):
     db = get_db()
+    
+    # Protect against self-deactivation
+    current_uid = admin.get("id") or admin.get("sub")
+    if req.is_active is False:
+        user_doc = await db.users.find_one({"_id": ObjectId(user_id)})
+        if user_doc and (user_doc.get("email") == admin.get("sub") or str(user_doc["_id"]) == current_uid):
+            raise HTTPException(400, "Cannot deactivate your own account.")
+            
     updates = {}
-    if req.name:
+    if req.name is not None:
         updates["name"] = req.name
+    if req.is_active is not None:
+        updates["is_active"] = req.is_active
+        
     if updates:
         await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": updates})
         
@@ -75,9 +88,14 @@ async def update_user(user_id: str, req: UserUpdateRequest, admin=Depends(requir
 @router.delete("/users/{user_id}")
 async def delete_user(user_id: str, admin=Depends(require_system_admin)):
     db = get_db()
+    
+    current_uid = admin.get("id") or admin.get("sub")
+    user_doc = await db.users.find_one({"_id": ObjectId(user_id)})
+    if user_doc and (user_doc.get("email") == admin.get("sub") or str(user_doc["_id"]) == current_uid):
+        raise HTTPException(400, "Cannot delete your own account.")
+        
     await db.users.delete_one({"_id": ObjectId(user_id)})
     await db.role_assignments.delete_one({"user_id": user_id})
-    # Cannot delete self check omitted for simplicity, but handled gracefully depending on use
     return {"success": True}
 
 # --- Teams ---

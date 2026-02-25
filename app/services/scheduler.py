@@ -58,7 +58,7 @@ async def _run_scheduled_test(schedule_id: str):
         from app.routers.test_router import _run_all
         # We don't have credentials for scheduled basic tests
         await _run_all(tid, url, username=None, enc_pw=None,
-                       user_id=schedule.get("user_id"))
+                       user_id=schedule.get("user_id"), skip_notifications=True)
 
         # Wait for it to complete (it saves to db)
         for _ in range(120):  # up to 2 minutes
