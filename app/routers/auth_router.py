@@ -61,7 +61,8 @@ async def register(req: RegisterRequest):
         user["id"] = str(result.inserted_id)
     else:
         user["id"] = "dev-in-memory"
-    # Save role assignment
+
+    # Save role assignment — validate role value first
     valid_roles = {"admin", "developer", "viewer"}
     role = req.role if req.role in valid_roles else "developer"
     if db is not None:
