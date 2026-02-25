@@ -32,6 +32,9 @@ class UpdateRoleRequest(BaseModel):
 class UpdateTeamSettings(BaseModel):
     admins_only_chat: bool
 
+class RespondInviteRequest(BaseModel):
+    accept: bool
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _now() -> str:
@@ -100,8 +103,9 @@ async def get_my_teams(current_user: dict = Depends(get_current_user)):
     user_email = current_user.get("email") or current_user.get("sub", "")
     user_id = current_user["sub"]
 
-    # Get all memberships
-    mem_cursor = db.team_members.find({"email": user_email, "accepted": True}, {"_id": 0})
+    # --- Get all memberships (including pending) ---
+    # so they can see pending invites in their UI
+    mem_cursor = db.team_members.find({"email": user_email}, {"_id": 0})
     memberships = await mem_cursor.to_list(length=100)
     team_ids = [m["team_id"] for m in memberships]
 
@@ -163,6 +167,36 @@ async def invite_member(
     member.pop("_id", None)
 
     return {"success": True, "member": member}
+
+
+@router.post("/{team_id}/members/respond")
+async def respond_to_invite(
+    team_id: str,
+    body: RespondInviteRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Accept or reject an invitation."""
+    db = get_db()
+    user_email = current_user.get("email") or current_user.get("sub", "")
+    user_id = current_user["sub"]
+
+    member = await db.team_members.find_one({
+        "team_id": team_id,
+        "email": user_email
+    })
+
+    if not member:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    if body.accept:
+        await db.team_members.update_one(
+            {"_id": member["_id"]},
+            {"$set": {"accepted": True, "user_id": user_id}}
+        )
+        return {"success": True, "status": "accepted"}
+    else:
+        await db.team_members.delete_one({"_id": member["_id"]})
+        return {"success": True, "status": "rejected"}
 
 
 @router.patch("/{team_id}/members/{email}/role")
