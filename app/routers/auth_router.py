@@ -19,6 +19,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8)
     name: str = Field(..., min_length=1)
+    role: Optional[str] = Field("developer", description="Initial role: admin | developer | viewer")
 
 
 class TokenResponse(BaseModel):
@@ -60,6 +61,16 @@ async def register(req: RegisterRequest):
         user["id"] = str(result.inserted_id)
     else:
         user["id"] = "dev-in-memory"
+    # Save role assignment
+    valid_roles = {"admin", "developer", "viewer"}
+    role = req.role if req.role in valid_roles else "developer"
+    if db is not None:
+        await db.role_assignments.replace_one(
+            {"user_id": user["id"]},
+            {"user_id": user["id"], "role": role},
+            upsert=True
+        )
+
     token = create_access_token({"sub": user["email"], "name": user["name"]})
     return TokenResponse(access_token=token, user=_safe(user))
 
