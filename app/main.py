@@ -142,18 +142,30 @@ app = FastAPI(
 )
 
 app.add_middleware(RateLimitMiddleware)
+
+# Build allowed origins — Vercel frontend is always included regardless of environment.
+# Add EXTRA_ALLOWED_ORIGINS env var (comma-separated) for preview/staging URLs.
+_base_origins = [
+    "https://testverse-frontend.vercel.app",
+    "https://yourdomain.com",
+]
+_dev_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+]
+_extra = os.getenv("EXTRA_ALLOWED_ORIGINS", "")
+_extra_origins = [o.strip() for o in _extra.split(",") if o.strip()]
+
+ALLOWED_ORIGINS = _base_origins + _extra_origins + (
+    _dev_origins if settings.environment != "production" else []
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000",
-    ] if settings.environment != "production" else [
-        "https://yourdomain.com",
-        "https://testverse-frontend.vercel.app",
-    ],
-    allow_credentials=True,   # ⚠️  requires explicit origins — wildcard "*" is blocked by browsers when credentials=True
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
