@@ -374,7 +374,7 @@ async def get_security_summary(current_user: dict = Depends(get_current_user)):
         "score": 0,
     }
 
-    if db:
+    if db is not None:
         policy = await db.key_rotation_policies.find_one({"user_id": user_id})
         summary["key_rotation_policy"] = policy is not None
 
