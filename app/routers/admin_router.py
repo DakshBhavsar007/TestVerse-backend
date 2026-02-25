@@ -48,6 +48,7 @@ async def get_all_users(admin=Depends(require_system_admin)):
         u["role"] = role_doc["role"] if role_doc else "developer"
         u["is_active"] = u.get("is_active", True)
         u["created_at"] = str(u.get("created_at", ""))
+        u["last_login"] = str(u.get("last_login", "")) if u.get("last_login") else ""
         u.pop("_id", None)
         result.append(u)
     return {"users": result}

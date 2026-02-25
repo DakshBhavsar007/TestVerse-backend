@@ -93,6 +93,14 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
         )
     user_id_str = str(user.get("_id") or user.get("id", ""))
     token = create_access_token({"sub": user["email"], "name": user.get("name", ""), "id": user_id_str})
+    
+    db = get_db()
+    if db is not None:
+        await db.users.update_one(
+            {"_id": user.get("_id")},
+            {"$set": {"last_login": datetime.now(timezone.utc)}}
+        )
+        
     return TokenResponse(access_token=token, user=_safe(user))
 
 
