@@ -79,3 +79,70 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
 @router.get("/me")
 async def me(current_user: dict = Depends(get_current_user)):
     return {"user": current_user}
+
+
+# ─── Profile Update Endpoints ──────────────────────────────────────────────────
+
+class UpdateProfileRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1)
+    email: Optional[EmailStr] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8)
+
+
+@router.patch("/update-profile")
+async def update_profile(
+    req: UpdateProfileRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update the current user's name and/or email."""
+    db = get_db()
+    user_id = current_user.get("id") or current_user.get("sub")
+    email = current_user.get("email") or current_user.get("sub")
+
+    if db is None:
+        raise HTTPException(500, "Database not available")
+
+    updates = {}
+    if req.name:
+        updates["name"] = req.name
+    if req.email and req.email.lower() != email:
+        existing = await db.users.find_one({"email": req.email.lower()})
+        if existing:
+            raise HTTPException(409, "Email already in use")
+        updates["email"] = req.email.lower()
+
+    if not updates:
+        raise HTTPException(400, "No changes provided")
+
+    await db.users.update_one({"email": email}, {"$set": updates})
+    updated = await db.users.find_one({"email": updates.get("email", email)})
+    return {"success": True, "user": _safe(updated)}
+
+
+@router.post("/change-password")
+async def change_password(
+    req: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Change password after verifying the current password."""
+    db = get_db()
+    email = current_user.get("email") or current_user.get("sub")
+
+    if db is None:
+        raise HTTPException(500, "Database not available")
+
+    user = await _find_by_email(email)
+    if not user:
+        raise HTTPException(404, "User not found")
+    if not verify_password(req.current_password, user["hashed_password"]):
+        raise HTTPException(400, "Current password is incorrect")
+
+    await db.users.update_one(
+        {"email": email},
+        {"$set": {"hashed_password": hash_password(req.new_password)}}
+    )
+    return {"success": True, "message": "Password changed successfully"}

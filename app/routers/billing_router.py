@@ -120,7 +120,7 @@ async def get_my_plan(current_user: dict = Depends(get_current_user)):
     plan = PLANS[plan_name]
 
     usage = {}
-    if db:
+    if db is not None:
         usage = await get_monthly_usage(user_id, db)
 
         # Also get live counts from DB for accuracy
@@ -286,7 +286,7 @@ async def check_limit(
 
     # Get current count
     current = 0
-    if db:
+    if db is not None:
         if resource == "tests_per_month":
             month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             current = await db.test_results.count_documents({"user_id": user_id, "created_at": {"$gte": month_start}})

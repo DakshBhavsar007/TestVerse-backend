@@ -96,6 +96,7 @@ async def lifespan(app: FastAPI):
             await db.activity_feed.create_index([("user_id", 1), ("timestamp", -1)])
             await db.activity_feed.create_index([("entity_id", 1), ("timestamp", -1)])
             await db.activity_feed.create_index("timestamp")
+            await db.activity_feed.create_index("user_name")  # for faster name lookups
             # Phase 8C indexes
             await db.cicd_configs.create_index([("user_id", 1), ("provider", 1)], unique=True)
             await db.cicd_triggers.create_index([("user_id", 1), ("triggered_at", -1)])
@@ -207,6 +208,6 @@ async def health():
         "environment": settings.environment,
         "scheduler": "running" if scheduler.running else "stopped",
         "scheduled_jobs": len(scheduler.get_jobs()),
-        "phase": "8A — AI Intelligence",
+        "phase": "8E — OpenAPI Import + Profile",
         "ai_enabled": bool(os.getenv("OPENAI_API_KEY")),
     }

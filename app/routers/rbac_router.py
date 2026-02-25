@@ -424,3 +424,36 @@ async def list_all_permissions():
             "viewer": "Read-only access to tests and reports",
         }
     }
+
+@router.get("/team-members")
+async def get_team_members(
+    current_user: dict = Depends(get_current_user)
+):
+    """List all users with their global roles. Requires manage_team permission."""
+    db = get_db()
+    user_id = current_user.get("id") or current_user.get("sub")
+    role = await get_user_role(user_id)
+
+    # Only admins and developers can view team members
+    if role == UserRole.VIEWER:
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    if db is None:
+        return {"success": True, "members": []}
+
+    # Fetch all users
+    users = await db.users.find({}, {"hashed_password": 0}).to_list(200)
+    members = []
+    for u in users:
+        uid = str(u.get("id") or u.get("_id", ""))
+        role_doc = await db.role_assignments.find_one({"user_id": uid})
+        user_role = role_doc["role"] if role_doc else "developer"
+        members.append({
+            "user_id": uid,
+            "email": u.get("email", ""),
+            "name": u.get("name") or u.get("email", "Unknown"),
+            "role": user_role,
+            "joined_at": u.get("created_at", "").isoformat() if hasattr(u.get("created_at", ""), "isoformat") else str(u.get("created_at", "")),
+        })
+
+    return {"success": True, "members": members}
