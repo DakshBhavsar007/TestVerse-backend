@@ -44,10 +44,10 @@ async def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme),
     api_key: Optional[str] = Depends(api_key_header)
 ) -> dict:
+    from app.database import get_db
     if api_key:
         import hashlib
         from datetime import datetime, timezone
-        from app.database import get_db
 
         db = get_db()
         if db is not None and api_key.startswith("tv_"):
@@ -86,7 +86,8 @@ async def get_current_user(
             if getattr(e, "status_code", None) == 403:
                 raise e
             pass
-        except Exception:
+        except Exception as e:
+            print(f"Token verification error: {e}")
             pass
 
     raise HTTPException(
