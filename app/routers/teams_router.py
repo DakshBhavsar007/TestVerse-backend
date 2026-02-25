@@ -161,7 +161,7 @@ async def invite_member(
         "email": body.email,
         "role": body.role,
         "invited_at": _now(),
-        "accepted": bool(invited_user_id),  # auto-accept if user exists
+        "accepted": False,  # Force manual acceptance so the user sees the invite notification
     }
     await db.team_members.insert_one(member)
     member.pop("_id", None)
@@ -188,14 +188,42 @@ async def respond_to_invite(
     if not member:
         raise HTTPException(status_code=404, detail="Invitation not found")
 
+    team = await db.teams.find_one({"team_id": team_id}, {"_id": 0})
+
     if body.accept:
         await db.team_members.update_one(
             {"_id": member["_id"]},
             {"$set": {"accepted": True, "user_id": user_id}}
         )
+        if team:
+            import uuid
+            await db.activity_feed.insert_one({
+                "activity_id": str(uuid.uuid4()),
+                "user_id": team["owner_id"],
+                "user_email": team.get("owner_email", "unknown"),
+                "user_name": "System",
+                "action": "invite_accepted",
+                "entity_type": "team",
+                "entity_id": team_id,
+                "detail": f"{user_email} happily accepted your invitation to join '{team.get('name', 'Unknown')}'",
+                "timestamp": _now(),
+            })
         return {"success": True, "status": "accepted"}
     else:
         await db.team_members.delete_one({"_id": member["_id"]})
+        if team:
+            import uuid
+            await db.activity_feed.insert_one({
+                "activity_id": str(uuid.uuid4()),
+                "user_id": team["owner_id"],
+                "user_email": team.get("owner_email", "unknown"),
+                "user_name": "System",
+                "action": "invite_rejected",
+                "entity_type": "team",
+                "entity_id": team_id,
+                "detail": f"{user_email} rejected your invitation to join '{team.get('name', 'Unknown')}'",
+                "timestamp": _now(),
+            })
         return {"success": True, "status": "rejected"}
 
 
