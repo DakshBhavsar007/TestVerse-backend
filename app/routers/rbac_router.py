@@ -425,11 +425,12 @@ async def list_all_permissions():
         }
     }
 
+
 @router.get("/team-members")
 async def get_team_members(
     current_user: dict = Depends(get_current_user)
 ):
-    """List all users with their global roles. Requires manage_team permission."""
+    """List all users with their global roles."""
     db = get_db()
     user_id = current_user.get("id") or current_user.get("sub")
     role = await get_user_role(user_id)
@@ -445,7 +446,8 @@ async def get_team_members(
     users = await db.users.find({}, {"hashed_password": 0}).to_list(200)
     members = []
     for u in users:
-        uid = str(u.get("id") or u.get("_id", ""))
+        # FIX: always use _id (MongoDB's native field) — users collection has no "id" field
+        uid = str(u.get("_id", ""))
         role_doc = await db.role_assignments.find_one({"user_id": uid})
         user_role = role_doc["role"] if role_doc else "developer"
         members.append({
