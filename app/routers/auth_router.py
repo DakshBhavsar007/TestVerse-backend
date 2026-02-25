@@ -4,6 +4,7 @@ POST /auth/register  — create account, get JWT
 POST /auth/login     — OAuth2 form login, get JWT
 GET  /auth/me        — current user info (protected)
 """
+from typing import Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
