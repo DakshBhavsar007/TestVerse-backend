@@ -38,7 +38,7 @@ VALID_ROLES = {"admin", "developer", "viewer"}
 
 FRONTEND_URL    = os.getenv("FRONTEND_URL", "http://localhost:5173")
 SENDGRID_KEY    = os.getenv("SENDGRID_API_KEY", "")
-FROM_EMAIL      = os.getenv("FROM_EMAIL", "noreply@testverse.com")
+FROM_EMAIL      = os.getenv("SENDGRID_FROM_EMAIL", "noreply@testverse.com")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 
 
