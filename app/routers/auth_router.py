@@ -160,50 +160,40 @@ class ChangePasswordRequest(BaseModel):
     new_password:     str = Field(..., min_length=8)
 
 
-# ─── Register (sends OTP, account inactive until verified) ────────────────────
+# ─── Register (OTP-first: no DB insert until verified) ────────────────────────
 
 @router.post("/register", status_code=202)
 async def register(req: RegisterRequest):
     """
-    Create a pending (unverified) account and send a 6-digit OTP.
-    The account is activated only after /verify-otp succeeds.
+    Store registration data + OTP in email_otps ONLY.
+    The actual user record is created in /verify-otp after OTP is confirmed.
+    This prevents ghost/unverified accounts polluting the users collection.
     """
-    existing = await _find_by_email(req.email)
-    if existing:
-        # If account exists but is NOT yet verified, allow re-registration
-        # (user hit back button or closed tab before verifying)
-        if not existing.get("is_active", True) and not existing.get("email_verified", False):
-            pass  # fall through — resend a fresh OTP below
-        else:
-            raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered.")
-
     db = get_db()
-    role = req.role if req.role in VALID_ROLES else "developer"
-    otp  = str(random.randint(100000, 999999))
+
+    # Block only if a VERIFIED account already exists with this email
+    existing = await _find_by_email(req.email)
+    if existing and (existing.get("is_active") or existing.get("email_verified")):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered.")
+
+    role       = req.role if req.role in VALID_ROLES else "developer"
+    otp        = str(random.randint(100000, 999999))
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
 
-    # Store pending user (upsert handles both new + back-button re-register)
-    pending = {
-        "email":           req.email.lower(),
-        "name":            req.name,
-        "hashed_password": hash_password(req.password),
-        "role":            role,
-        "created_at":      datetime.now(timezone.utc),
-        "is_active":       False,   # ← inactive until OTP verified
-        "auth_provider":   "email",
-    }
-
     if db is not None:
-        # Upsert so resend-before-verify doesn't duplicate
-        await db.users.update_one(
-            {"email": req.email.lower()},
-            {"$set": pending},
-            upsert=True
-        )
-        # Store OTP
+        # Store OTP + pending registration data — do NOT insert into users yet
         await db.email_otps.replace_one(
             {"email": req.email.lower()},
-            {"email": req.email.lower(), "otp": otp, "expires_at": expires_at, "verified": False},
+            {
+                "email":                   req.email.lower(),
+                "otp":                     otp,
+                "expires_at":              expires_at,
+                "verified":                False,
+                # Pending user fields — moved to users collection only after OTP verified
+                "pending_name":            req.name,
+                "pending_hashed_password": hash_password(req.password),
+                "pending_role":            role,
+            },
             upsert=True,
         )
 
@@ -239,19 +229,27 @@ async def verify_otp(req: VerifyOTPRequest):
     if record["otp"] != req.otp.strip():
         raise HTTPException(400, "Incorrect OTP. Please try again.")
 
-    # Activate the user
-    await db.users.update_one(
-        {"email": req.email.lower()},
-        {"$set": {"is_active": True, "email_verified": True}}
-    )
+    # ── OTP is valid — NOW create the real user account ──────────────────────
+    new_user = {
+        "email":           req.email.lower(),
+        "name":            record.get("pending_name", ""),
+        "hashed_password": record.get("pending_hashed_password", ""),
+        "role":            record.get("pending_role", "developer"),
+        "created_at":      datetime.now(timezone.utc),
+        "is_active":       True,
+        "email_verified":  True,
+        "auth_provider":   "email",
+    }
 
-    # Mark OTP used
-    await db.email_otps.update_one(
+    # Upsert in case of any race condition
+    result = await db.users.update_one(
         {"email": req.email.lower()},
-        {"$set": {"verified": True}}
+        {"$set": new_user},
+        upsert=True,
     )
+    user_id = str(result.upserted_id) if result.upserted_id else None
 
-    # Fetch user & assign role
+    # Fetch the inserted/updated user to get the real _id
     user = await _find_by_email(req.email)
     if not user:
         raise HTTPException(500, "User not found after verification.")
@@ -259,6 +257,13 @@ async def verify_otp(req: VerifyOTPRequest):
     user_id = str(user.get("_id") or user.get("id", ""))
     role    = user.get("role", "developer")
 
+    # Mark OTP as used
+    await db.email_otps.update_one(
+        {"email": req.email.lower()},
+        {"$set": {"verified": True}}
+    )
+
+    # Assign role
     await db.role_assignments.replace_one(
         {"user_id": user_id},
         {"user_id": user_id, "role": role},
@@ -274,27 +279,32 @@ async def verify_otp(req: VerifyOTPRequest):
 @router.post("/resend-otp")
 async def resend_otp(req: ResendOTPRequest):
     db = get_db()
-    user = await _find_by_email(req.email)
 
-    if not user:
-        raise HTTPException(404, "No account found for this email.")
-    if user.get("is_active") and user.get("email_verified"):
+    # Check if already a verified user first
+    user = await _find_by_email(req.email)
+    if user and user.get("is_active") and user.get("email_verified"):
         raise HTTPException(400, "Email is already verified.")
+
+    # Look up pending OTP record (registration data lives here before verification)
+    otp_record = await db.email_otps.find_one({"email": req.email.lower(), "verified": False})
+    if not otp_record and not user:
+        raise HTTPException(404, "No pending registration found for this email.")
 
     otp        = str(random.randint(100000, 999999))
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+    name       = (otp_record or {}).get("pending_name") or (user or {}).get("name", "there")
 
     if db is not None:
-        await db.email_otps.replace_one(
+        # Preserve pending registration data, just refresh the OTP
+        await db.email_otps.update_one(
             {"email": req.email.lower()},
-            {"email": req.email.lower(), "otp": otp, "expires_at": expires_at, "verified": False},
-            upsert=True,
+            {"$set": {"otp": otp, "expires_at": expires_at, "verified": False}},
         )
 
     _send_email(
         to=req.email,
         subject="TestVerse — Your new verification code",
-        html=_otp_email_html(user.get("name", "there"), otp),
+        html=_otp_email_html(name, otp),
     )
 
     return {"message": "otp_resent"}
