@@ -168,15 +168,21 @@ async def register(req: RegisterRequest):
     Create a pending (unverified) account and send a 6-digit OTP.
     The account is activated only after /verify-otp succeeds.
     """
-    if await _find_by_email(req.email):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered.")
+    existing = await _find_by_email(req.email)
+    if existing:
+        # If account exists but is NOT yet verified, allow re-registration
+        # (user hit back button or closed tab before verifying)
+        if not existing.get("is_active", True) and not existing.get("email_verified", False):
+            pass  # fall through — resend a fresh OTP below
+        else:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered.")
 
     db = get_db()
     role = req.role if req.role in VALID_ROLES else "developer"
     otp  = str(random.randint(100000, 999999))
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
 
-    # Store pending user
+    # Store pending user (upsert handles both new + back-button re-register)
     pending = {
         "email":           req.email.lower(),
         "name":            req.name,
