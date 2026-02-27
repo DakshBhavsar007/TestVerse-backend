@@ -98,7 +98,7 @@ async def lifespan(app: FastAPI):
             await db.activity_feed.create_index([("user_id", 1), ("timestamp", -1)])
             await db.activity_feed.create_index([("entity_id", 1), ("timestamp", -1)])
             await db.activity_feed.create_index("timestamp")
-            await db.activity_feed.create_index("user_name")  # for faster name lookups
+            await db.activity_feed.create_index("user_name")
             # Phase 8C indexes
             await db.cicd_configs.create_index([("user_id", 1), ("provider", 1)], unique=True)
             await db.cicd_triggers.create_index([("user_id", 1), ("triggered_at", -1)])
@@ -106,7 +106,13 @@ async def lifespan(app: FastAPI):
             await db.jira_configs.create_index("user_id", unique=True)
             await db.imported_tests.create_index("import_id", unique=True)
             await db.imported_tests.create_index([("user_id", 1), ("imported_at", -1)])
-            
+            # Auth — OTP + Password Reset indexes
+            await db.email_otps.create_index("email")
+            await db.email_otps.create_index("expires_at", expireAfterSeconds=600)
+            await db.password_resets.create_index("token")
+            await db.password_resets.create_index("email")
+            await db.password_resets.create_index("expires_at", expireAfterSeconds=3600)
+
             # Initialize Default Admin
             from .utils.auth import hash_password
             from datetime import datetime, timezone
@@ -119,6 +125,7 @@ async def lifespan(app: FastAPI):
                     "hashed_password": hash_password("TESTVERSE@007"),
                     "created_at": datetime.now(timezone.utc),
                     "is_active": True,
+                    "email_verified": True,
                 }
                 res = await db.users.insert_one(new_admin)
                 admin_id = str(res.inserted_id)
@@ -129,11 +136,15 @@ async def lifespan(app: FastAPI):
                 )
                 print("🌟 Default Admin created.")
             else:
-                # Ensure password and role are correct in case it got changed
                 admin_id = str(admin_user.get("_id") or admin_user.get("id"))
                 await db.users.update_one(
                     {"email": admin_email},
-                    {"$set": {"hashed_password": hash_password("TESTVERSE@007"), "name": "TestVerse Admin"}}
+                    {"$set": {
+                        "hashed_password": hash_password("TESTVERSE@007"),
+                        "name": "TestVerse Admin",
+                        "is_active": True,
+                        "email_verified": True,
+                    }}
                 )
                 await db.role_assignments.replace_one(
                     {"user_id": admin_id},
