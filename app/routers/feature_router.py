@@ -257,10 +257,10 @@ async def get_feature_test(
 
 @router.websocket("/{job_id}/ws")
 async def ws_feature_test(job_id: str, websocket: WebSocket):
-    """Live-stream test progress."""
+    """Live-stream test progress with keepalive ping every 20s."""
     await _ws_mgr.connect(job_id, websocket)
 
-    # Send snapshot immediately
+    # Send snapshot immediately so client has current state
     job = _JOBS.get(job_id)
     if job:
         snapshot: Dict[str, Any] = {
@@ -278,17 +278,72 @@ async def ws_feature_test(job_id: str, websocket: WebSocket):
         try:
             await websocket.send_text(json.dumps(snapshot, default=str))
         except Exception:
-            pass
+            _ws_mgr.disconnect(job_id, websocket)
+            return
 
         if job["status"] in ("completed", "failed"):
             _ws_mgr.disconnect(job_id, websocket)
             await websocket.close()
             return
+    else:
+        # Job not found in this process (can happen with multi-worker deployments).
+        # Tell the client to poll instead and close gracefully.
+        try:
+            await websocket.send_text(json.dumps({
+                "type":    "error",
+                "message": "Job not found in this server instance — switching to poll mode",
+                "use_poll": True,
+                "done":    False,
+            }))
+        except Exception:
+            pass
+        _ws_mgr.disconnect(job_id, websocket)
+        await websocket.close()
+        return
 
+    # ── Active heartbeat loop ──────────────────────────────────────────────────
+    # Render (and most reverse proxies) close idle WebSocket connections after
+    # ~55 s of silence. We ping the client every 20 s to keep the connection
+    # alive, and also poll _JOBS ourselves so we can push completion even if
+    # the background task's asyncio.create_task() broadcast missed this socket.
+    PING_INTERVAL = 20  # seconds
     try:
         while True:
-            await websocket.receive_text()   # keep alive; server pushes data
-    except WebSocketDisconnect:
+            await asyncio.sleep(PING_INTERVAL)
+
+            # Check if the job finished while we were sleeping
+            job = _JOBS.get(job_id)
+            if job and job["status"] in ("completed", "failed"):
+                final: Dict[str, Any] = {
+                    "type":   "done",
+                    "job_id": job_id,
+                    "status": job["status"],
+                    "done":   True,
+                    "result": job.get("result"),
+                    "error":  job.get("error"),
+                }
+                try:
+                    await websocket.send_text(json.dumps(final, default=str))
+                except Exception:
+                    pass
+                break
+
+            # Send a ping (lightweight JSON — the client ignores type="ping")
+            try:
+                await websocket.send_text(json.dumps({
+                    "type":   "ping",
+                    "job_id": job_id,
+                    "status": job["status"] if job else "unknown",
+                    "log_count": len(job["log"]) if job else 0,
+                }))
+            except Exception:
+                break  # Client disconnected
+
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        pass
+    finally:
         _ws_mgr.disconnect(job_id, websocket)
 
 
