@@ -46,6 +46,8 @@ from .routers.chat_router import router as chat_router
 from .routers.admin_router import router as admin_router
 # Phase 8F — Human-Like Feature Testing
 from .routers.feature_router import router as feature_router
+# Phase 8G — Data Spy
+from .routers.data_spy_router import router as data_spy_router
 
 from .config import get_settings
 from .middleware.rate_limit import RateLimitMiddleware
@@ -254,6 +256,8 @@ app.include_router(chat_router)
 app.include_router(admin_router)
 # Phase 8F
 app.include_router(feature_router)
+# Phase 8G
+app.include_router(data_spy_router)
 
 os.makedirs(settings.reports_dir, exist_ok=True)
 app.mount("/reports", StaticFiles(directory=settings.reports_dir), name="reports")
