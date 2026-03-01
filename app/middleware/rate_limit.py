@@ -12,7 +12,7 @@ from app.config import get_settings
 
 _log: dict[str, deque] = defaultdict(deque)
 WINDOW = 60
-LIMITED = {"/run"}
+LIMITED = {"/run", "/feature-test/run"}
 
 
 def _ip(request: Request) -> str:

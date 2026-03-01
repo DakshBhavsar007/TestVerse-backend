@@ -44,6 +44,8 @@ from .routers.cicd_router import router as cicd_router
 from .routers.openapi_router import router as openapi_router
 from .routers.chat_router import router as chat_router
 from .routers.admin_router import router as admin_router
+# Phase 8F — Human-Like Feature Testing
+from .routers.feature_router import router as feature_router
 
 from .config import get_settings
 from .middleware.rate_limit import RateLimitMiddleware
@@ -250,6 +252,8 @@ app.include_router(cicd_router)
 app.include_router(openapi_router)
 app.include_router(chat_router)
 app.include_router(admin_router)
+# Phase 8F
+app.include_router(feature_router)
 
 os.makedirs(settings.reports_dir, exist_ok=True)
 app.mount("/reports", StaticFiles(directory=settings.reports_dir), name="reports")
@@ -257,7 +261,7 @@ app.mount("/reports", StaticFiles(directory=settings.reports_dir), name="reports
 
 @app.get("/", tags=["Health"])
 async def root():
-    return {"service": "TestVerse API", "version": "3.1.0", "status": "running", "docs": "/docs"}
+    return {"service": "TestVerse API", "version": "3.3.0", "status": "running", "docs": "/docs"}
 
 
 @app.api_route("/health", methods=["GET", "HEAD"], tags=["Health"])
@@ -270,6 +274,6 @@ async def health():
         "environment": settings.environment,
         "scheduler": "running" if scheduler.running else "stopped",
         "scheduled_jobs": len(scheduler.get_jobs()),
-        "phase": "8E — OpenAPI Import + Profile",
+        "phase": "8F — Human-Like Feature Testing",
         "ai_enabled": bool(os.getenv("OPENAI_API_KEY")),
     }
