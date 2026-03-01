@@ -1239,7 +1239,16 @@ class FeatureTester:
         logged_in = False
 
         async with async_playwright() as p:
-            browser: Browser = await p.chromium.launch(headless=True)
+            browser: Browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--single-process",
+                ],
+            )
             ctx: BrowserContext = await browser.new_context(
                 viewport={"width": 1280, "height": 800},
                 user_agent=(
